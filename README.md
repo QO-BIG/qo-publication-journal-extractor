@@ -10,7 +10,7 @@ A web app for **Quality Oracle** that extracts trademark entries from MyIPO IP J
 
 - Detects all trademarks where the agent is Quality Oracle (matches by firm name or office address)
 - Handles multi-page trademark entries automatically
-- Outputs one PDF per trademark, named `Journal page - TM2025XXXXXX.pdf`
+- Outputs one PDF per trademark, named `TMXXXXXXXXXX_Journal Page.pdf`
 - Bundles all PDFs into a single ZIP for download
 
 ## How to use

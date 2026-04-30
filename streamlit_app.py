@@ -149,7 +149,7 @@ def build_zip(pdf_bytes: bytes, entries: list[dict]) -> bytes:
             pdf_out = io.BytesIO()
             writer.write(pdf_out)
 
-            filename = f"Journal page - {entry['tm_no']}.pdf"
+            filename = f"{entry['tm_no']}_Journal Page.pdf"
             zf.writestr(filename, pdf_out.getvalue())
 
     return zip_buf.getvalue()
@@ -197,7 +197,7 @@ if uploaded:
         )
 
         st.info(
-            "Each PDF is named **Journal page - TM2025XXXXXX.pdf** and contains "
+            "Each PDF is named **TMXXXXXXXXXX_Journal Page.pdf** and contains "
             "the journal cover page + the page(s) where the trademark appears.",
             icon="ℹ️",
         )

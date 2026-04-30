@@ -1,6 +1,6 @@
 """
 TM Journal Extractor — Streamlit web app
-Extracts Quality Oracle trademark entries from MyIPO journal PDFs.
+Extracts Quality Oracle trademark entries from MyIPO (Malaysia) and IPOS (Singapore) journal PDFs.
 Deploy: push to GitHub → connect to share.streamlit.io → done.
 """
 
@@ -13,13 +13,17 @@ import pdfplumber
 import pypdf
 import streamlit as st
 
-# ── Detection patterns ─────────────────────────────────────────────────────────
-# Matches our office by name OR by address (covers "Tan Sin Su", "Quality Oracle",
-# or any future agent name variation at the same address).
+# ── Malaysia (MyIPO) patterns ──────────────────────────────────────────────────
 AGENT_QO_RE   = re.compile(r'Quality Oracle|Surian\s+Tower', re.IGNORECASE)
 AGENT_ANY_RE  = re.compile(r'(?:(?<=\n)|^)AGENT\s*:', re.IGNORECASE | re.MULTILINE)
 AGENT_LINE_RE = re.compile(r'AGENT\s*:', re.IGNORECASE)
 TM_PATTERN    = re.compile(r'\bTM\d{10}\b')
+
+# ── Singapore (IPOS) patterns ──────────────────────────────────────────────────
+SG_TM_NO_RE         = re.compile(r'National\s+Trade\s+Mark\s+No[:\s]+(\S+)', re.IGNORECASE)
+SG_AGENT_HEADER_RE  = re.compile(r'Agent\s+Details/Address\s+for\s+Service', re.IGNORECASE)
+SG_AGENT_QO_RE      = re.compile(r'Quality\s+Oracle', re.IGNORECASE)
+SG_OWNER_HEADER_RE  = re.compile(r'Applicant/Proprietor\s+Details', re.IGNORECASE)
 
 
 # ── Core extraction ────────────────────────────────────────────────────────────
@@ -133,6 +137,63 @@ def find_qo_entries(pages: list[tuple[int, str]]) -> list[dict]:
     return entries
 
 
+def build_sg_position_index(pages):
+    tm_list, agent_list = [], []
+    for page_idx, text in pages:
+        for m in SG_TM_NO_RE.finditer(text):
+            tm_list.append((page_idx, m.start(), m.group(1).strip()))
+        for m in SG_AGENT_HEADER_RE.finditer(text):
+            is_qo = bool(SG_AGENT_QO_RE.search(text[m.start(): m.start() + 500]))
+            agent_list.append((page_idx, m.start(), is_qo))
+    return tm_list, agent_list
+
+
+def extract_sg_owner(entry_text: str) -> str:
+    m = SG_OWNER_HEADER_RE.search(entry_text)
+    if not m:
+        return "Unknown Owner"
+    after = entry_text[m.end():]
+    lines = [l.strip() for l in after.splitlines() if l.strip()]
+    if not lines:
+        return "Unknown Owner"
+    first_line = lines[0]
+    name = first_line.split(';')[0].strip() if ';' in first_line else first_line
+    return re.sub(r'\s+', ' ', name).strip() or "Unknown Owner"
+
+
+def find_qo_entries_sg(pages: list[tuple[int, str]]) -> list[dict]:
+    tm_list, agent_list = build_sg_position_index(pages)
+    entries = []
+
+    for i, (tm_page, tm_pos, tm_no) in enumerate(tm_list):
+        next_tm_page = tm_list[i + 1][0] if i + 1 < len(tm_list) else len(pages)
+        next_tm_pos  = tm_list[i + 1][1] if i + 1 < len(tm_list) else 0
+
+        matched_agent = None
+        for ag_page, ag_pos, is_qo in agent_list:
+            if (ag_page, ag_pos) <= (tm_page, tm_pos):
+                continue
+            if (ag_page, ag_pos) >= (next_tm_page, next_tm_pos):
+                break
+            matched_agent = (ag_page, is_qo)
+            break
+
+        if not matched_agent or not matched_agent[1]:
+            continue
+
+        agent_page = matched_agent[0]
+        entry_text = "\n".join(pages[p][1] for p in range(tm_page, agent_page + 1))
+
+        entries.append({
+            "tm_no":      tm_no,
+            "start_page": tm_page,
+            "end_page":   agent_page,
+            "owner":      extract_sg_owner(entry_text),
+        })
+
+    return entries
+
+
 def build_zip(pdf_bytes: bytes, entries: list[dict]) -> bytes:
     """Build an in-memory ZIP containing one PDF per trademark entry."""
     reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
@@ -163,7 +224,13 @@ st.set_page_config(
 )
 
 st.title("📄 TM Journal Extractor")
-st.caption("Upload a MyIPO trademark journal PDF — extracts all Quality Oracle entries, one PDF per trademark.")
+st.caption("Upload a trademark journal PDF — extracts all Quality Oracle entries, one PDF per trademark.")
+
+journal_type = st.radio(
+    "Journal type",
+    ["Malaysia (MyIPO)", "Singapore (IPOS)"],
+    horizontal=True,
+)
 
 uploaded = st.file_uploader("Choose journal PDF", type="pdf")
 
@@ -171,8 +238,11 @@ if uploaded:
     pdf_bytes = uploaded.read()
 
     with st.spinner("Parsing PDF…"):
-        pages  = load_pages(pdf_bytes)
-        entries = find_qo_entries(pages)
+        pages = load_pages(pdf_bytes)
+        if journal_type == "Singapore (IPOS)":
+            entries = find_qo_entries_sg(pages)
+        else:
+            entries = find_qo_entries(pages)
 
     st.success(f"Found **{len(entries)}** Quality Oracle trademark{'s' if len(entries) != 1 else ''} in {len(pages)} pages.")
 
@@ -196,10 +266,17 @@ if uploaded:
             use_container_width=True,
         )
 
-        st.info(
-            "Each PDF is named **TMXXXXXXXXXX_Journal Page.pdf** and contains "
-            "the journal cover page + the page(s) where the trademark appears.",
-            icon="ℹ️",
-        )
+        if journal_type == "Singapore (IPOS)":
+            st.info(
+                "Each PDF is named **[TM Number]_Journal Page.pdf** and contains "
+                "the journal cover page + the page(s) where the trademark appears.",
+                icon="ℹ️",
+            )
+        else:
+            st.info(
+                "Each PDF is named **TMXXXXXXXXXX_Journal Page.pdf** and contains "
+                "the journal cover page + the page(s) where the trademark appears.",
+                icon="ℹ️",
+            )
     else:
         st.warning("No Quality Oracle entries found in this journal.")

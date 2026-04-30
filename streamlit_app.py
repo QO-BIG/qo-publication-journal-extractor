@@ -223,60 +223,182 @@ st.set_page_config(
     layout="centered",
 )
 
-st.title("📄 TM Journal Extractor")
-st.caption("Upload a trademark journal PDF — extracts all Quality Oracle entries, one PDF per trademark.")
+st.markdown("""
+<style>
+/* ── Global ── */
+[data-testid="stAppViewContainer"] { background: #f7f8fa; }
+[data-testid="stHeader"] { background: transparent; }
 
-journal_type = st.radio(
-    "Journal type",
-    ["Malaysia (MyIPO)", "Singapore (IPOS)"],
-    horizontal=True,
-)
+/* ── Header card ── */
+.qo-header {
+    background: linear-gradient(135deg, #1a3a6b 0%, #2563b0 100%);
+    border-radius: 14px;
+    padding: 28px 32px 22px;
+    margin-bottom: 24px;
+    color: white;
+}
+.qo-header h1 { margin: 0 0 4px; font-size: 1.75rem; font-weight: 700; color: white; }
+.qo-header p  { margin: 0; font-size: 0.92rem; opacity: 0.82; color: white; }
 
-uploaded = st.file_uploader("Choose journal PDF", type="pdf")
+/* ── Section labels ── */
+p.section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    margin: 0 0 6px;
+}
 
+/* ── Metric cards row ── */
+.metric-row { display: flex; gap: 14px; margin-bottom: 20px; }
+.metric-card {
+    flex: 1;
+    background: white;
+    border-radius: 10px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+    text-align: center;
+}
+.metric-card .val { font-size: 2rem; font-weight: 700; color: #1a3a6b; line-height: 1.1; }
+.metric-card .lbl { font-size: 0.78rem; color: #6b7280; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── Results table ── */
+[data-testid="stMarkdownContainer"] table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+[data-testid="stMarkdownContainer"] th {
+    background: #1a3a6b;
+    color: white;
+    padding: 10px 16px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-align: left;
+}
+[data-testid="stMarkdownContainer"] td {
+    padding: 9px 16px;
+    border-bottom: 1px solid #f0f1f3;
+    color: #374151;
+}
+[data-testid="stMarkdownContainer"] tr:nth-child(even) td { background: #f9fafb; }
+[data-testid="stMarkdownContainer"] code {
+    font-weight: 600;
+    color: #1a3a6b;
+    background: transparent;
+    font-size: 0.88rem;
+}
+
+/* ── Download button ── */
+[data-testid="stDownloadButton"] button {
+    background: linear-gradient(135deg, #1a3a6b, #2563b0) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.95rem !important;
+    padding: 12px !important;
+    transition: opacity 0.2s !important;
+}
+[data-testid="stDownloadButton"] button:hover { opacity: 0.88 !important; }
+
+/* ── Radio pills ── */
+[data-testid="stRadio"] > div { gap: 8px; }
+[data-testid="stRadio"] label {
+    border: 1.5px solid #d1d5db !important;
+    border-radius: 8px !important;
+    padding: 6px 16px !important;
+    font-size: 0.88rem !important;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+[data-testid="stRadio"] label:has(input:checked) {
+    border-color: #1a3a6b !important;
+    background: #eef2ff !important;
+    color: #1a3a6b !important;
+    font-weight: 600 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ── Header ────────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="qo-header">
+  <h1>TM Journal Extractor</h1>
+  <p>Quality Oracle · Extracts all agent entries from trademark journal PDFs, one file per trademark</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Upload panel ──────────────────────────────────────────────────────────────
+with st.container(border=True):
+    st.markdown("<p class='section-label'>SELECT JURISDICTION</p>", unsafe_allow_html=True)
+    journal_type = st.radio(
+        "Jurisdiction",
+        ["Malaysia (MyIPO)", "Singapore (IPOS)"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    st.divider()
+    st.markdown("<p class='section-label'>UPLOAD JOURNAL PDF</p>", unsafe_allow_html=True)
+    uploaded = st.file_uploader("Upload journal PDF", type="pdf", label_visibility="collapsed")
+
+# ── Results ───────────────────────────────────────────────────────────────────
 if uploaded:
     pdf_bytes = uploaded.read()
 
-    with st.spinner("Parsing PDF…"):
+    with st.spinner("Scanning journal…"):
         pages = load_pages(pdf_bytes)
         if journal_type == "Singapore (IPOS)":
             entries = find_qo_entries_sg(pages)
         else:
             entries = find_qo_entries(pages)
 
-    st.success(f"Found **{len(entries)}** Quality Oracle trademark{'s' if len(entries) != 1 else ''} in {len(pages)} pages.")
+    # Metrics row
+    st.markdown(f"""
+    <div class="metric-row">
+        <div class="metric-card">
+            <div class="val">{len(entries)}</div>
+            <div class="lbl">Entries Found</div>
+        </div>
+        <div class="metric-card">
+            <div class="val">{len(pages)}</div>
+            <div class="lbl">Pages Scanned</div>
+        </div>
+        <div class="metric-card">
+            <div class="val">{"SG" if "Singapore" in journal_type else "MY"}</div>
+            <div class="lbl">Jurisdiction</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     if entries:
         # Results table
-        st.subheader("Entries detected")
+        rows_md = "| TM Number | Page(s) |\n|---|---|\n"
         for e in entries:
             span = (f"p{e['start_page']+1}" if e["start_page"] == e["end_page"]
                     else f"p{e['start_page']+1}–{e['end_page']+1}")
-            st.markdown(f"- **{e['tm_no']}** &nbsp; `{span}` &nbsp; {e['owner']}")
+            rows_md += f"| `{e['tm_no']}` | {span} |\n"
+        st.markdown(rows_md)
 
-        # Build ZIP
-        with st.spinner("Generating PDFs…"):
+        # Build ZIP and download
+        with st.spinner("Packaging PDFs…"):
             zip_data = build_zip(pdf_bytes, entries)
 
         st.download_button(
-            label=f"⬇️  Download all {len(entries)} PDFs as ZIP",
+            label=f"⬇  Download {len(entries)} PDF{'s' if len(entries) != 1 else ''} as ZIP",
             data=zip_data,
             file_name="QO_trademarks.zip",
             mime="application/zip",
             use_container_width=True,
         )
 
-        if journal_type == "Singapore (IPOS)":
-            st.info(
-                "Each PDF is named **[TM Number]_Journal Page.pdf** and contains "
-                "the journal cover page + the page(s) where the trademark appears.",
-                icon="ℹ️",
-            )
-        else:
-            st.info(
-                "Each PDF is named **TMXXXXXXXXXX_Journal Page.pdf** and contains "
-                "the journal cover page + the page(s) where the trademark appears.",
-                icon="ℹ️",
-            )
+        st.markdown(
+            "<div style='font-size:0.78rem;color:#9ca3af;text-align:center;margin-top:8px'>"
+            "Each PDF contains the journal cover page + the trademark's page(s), "
+            "named <code>[TM Number]_Journal Page.pdf</code></div>",
+            unsafe_allow_html=True,
+        )
+
     else:
-        st.warning("No Quality Oracle entries found in this journal.")
+        st.warning("No Quality Oracle entries found in this journal.", icon="⚠️")
